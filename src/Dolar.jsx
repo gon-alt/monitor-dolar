@@ -10,6 +10,7 @@ const Dolar = () => {
   const [bandaMaxima, setBandaMaxima] = useState(null);
   const [alertaCompra, setAlertaCompra] = useState(null);
   const [alertaVenta, setAlertaVenta] = useState(null);
+  const [estadoActual, setEstadoActual] = useState('Cargando...');
   const [historicoOficial, setHistoricoOficial] = useState([]);
 
   useEffect(() => {
@@ -18,25 +19,10 @@ const Dolar = () => {
         const response = await fetch('https://dolarapi.com/v1/dolares/oficial');
         const data = await response.json();
 
-        const compra = parseFloat(data.compra);
-        const venta = parseFloat(data.venta);
-
-        setPrecioCompra(compra);
-        setPrecioVenta(venta);
-
-        const bandaMin = parseFloat((venta * 0.95).toFixed(2));
-        const bandaMax = parseFloat((venta * 1.05).toFixed(2));
-
-        setBandaMinima(bandaMin);
-        setBandaMaxima(bandaMax);
-
-        const alertaCompra = parseFloat((bandaMin + (venta - bandaMin) * 0.2).toFixed(2));
-        const alertaVenta = parseFloat((bandaMax - (bandaMax - venta) * 0.2).toFixed(2));
-
-        setAlertaCompra(alertaCompra);
-        setAlertaVenta(alertaVenta);
+        setPrecioCompra(parseFloat(data.compra));
+        setPrecioVenta(parseFloat(data.venta));
       } catch (error) {
-        console.error('Error al obtener datos oficiales:', error);
+        console.error('Error al obtener datos actuales:', error);
       }
     };
 
@@ -46,41 +32,73 @@ const Dolar = () => {
         const data = await response.json();
 
         const oficialData = data
-  .filter(d => d.source === 'Oficial')
-  .map(d => ({
-    fecha: new Date(d.date).toLocaleDateString("es-AR"),
-    compra: d.value_buy,
-    venta: d.value_sell
-  }));
-          console.log("Histórico oficial procesado:", oficialData);
+          .filter(d => d.source === 'Oficial')
+          .map(d => ({
+            fecha: new Date(d.date).toLocaleDateString("es-AR"),
+            compra: d.value_buy,
+            venta: d.value_sell
+          }));
 
         setHistoricoOficial(oficialData);
+
+        // Calcular banda mínima y máxima con valores históricos
+        const ventas = oficialData.map(d => d.venta);
+        const minVenta = Math.min(...ventas);
+        const maxVenta = Math.max(...ventas);
+
+        setBandaMinima(minVenta.toFixed(2));
+        setBandaMaxima(maxVenta.toFixed(2));
+
+        // Calcular alertas (2% por encima de mínimo y por debajo del máximo)
+        const alertaCompraCalc = parseFloat((minVenta * 1.02).toFixed(2));
+        const alertaVentaCalc = parseFloat((maxVenta * 0.98).toFixed(2));
+
+        setAlertaCompra(alertaCompraCalc);
+        setAlertaVenta(alertaVentaCalc);
+
+        // Determinar estado actual solo si ya se obtuvo precio actual
+        if (precioVenta !== null) {
+          if (precioVenta <= alertaCompraCalc) {
+            setEstadoActual("🟢 Estado: Oportunidad de compra");
+          } else if (precioVenta >= alertaVentaCalc) {
+            setEstadoActual("🔴 Estado: Oportunidad de venta");
+          } else {
+            setEstadoActual("⚪ Estado: Neutral");
+          }
+        }
       } catch (error) {
         console.error('Error al obtener histórico oficial:', error);
       }
     };
 
-    obtenerDatosActuales();
-    obtenerHistoricoOficial();
-  }, []);
+    obtenerDatosActuales().then(obtenerHistoricoOficial);
+  }, [precioVenta]);
 
   return (
     <div className="p-4 bg-white shadow-md rounded-lg text-center max-w-3xl mx-auto">
       <h1 className="text-2xl font-bold mb-2">💵 Dólar Oficial</h1>
+
       {precioVenta !== null && precioCompra !== null ? (
         <>
           <p>🛒 Compra: <strong>${precioCompra}</strong></p>
           <p>🏷️ Venta: <strong>${precioVenta}</strong></p>
+
           <p>🟢 Banda mínima: ${bandaMinima}</p>
           <p>🔴 Banda máxima: ${bandaMaxima}</p>
+
           <p>📉 Alerta de compra: ${alertaCompra}</p>
           <p>📈 Alerta de venta: ${alertaVenta}</p>
+
+          <p className="text-lg font-bold mt-4">{estadoActual}</p>
+
           <hr className="my-4" />
-          <h2 className="text-lg font-semibold mb-2">📊 Evolución del dólar oficial (últimos 90 días)</h2>
+          <h2 className="text-lg font-semibold mb-2">
+            📊 Evolución del dólar oficial (últimos 90 días)
+          </h2>
           <ResponsiveContainer width="100%" height={300}>
             <LineChart data={historicoOficial}>
               <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="fecha" interval={10} tick={{ fontSize: 14 }} />
+              <XAxis dataKey="fecha" interval={10} tick={{ fontSize: 12 }} />
               <YAxis domain={['auto', 'auto']} />
               <Tooltip />
               <Line type="monotone" dataKey="venta" stroke="#8884d8" name="Venta" />
